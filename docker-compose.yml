@@ -1,0 +1,12 @@
+version: "3.9"
+services:
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    tmpfs: /sessions
+    ports:
+      - 8080:80
+    env_file: .env
+    environment:
+      PMA_HOST: ${DB_HOST:-mysql}
+      PMA_USER: ${DB_USER:-root}
+      PMA_PASSWORD: ${DB_PASSWORD}

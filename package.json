@@ -1,0 +1,21 @@
+{
+   "name": "graphtl",
+   "version": "0.0.1",
+   "description": "Awesome project developed with TypeORM.",
+   "devDependencies": {
+      "@types/node": "^14.14.31",
+      "npm-check-updates": "^11.1.10",
+      "ts-node": "9.1.1",
+      "typescript": "4.2.2"
+   },
+   "dependencies": {
+      "dotenv": "^8.2.0",
+      "mysql": "^2.18.1",
+      "reflect-metadata": "^0.1.13",
+      "typeorm": "0.2.31",
+      "typeorm-naming-strategies": "^2.0.0"
+   },
+   "scripts": {
+      "start": "ts-node src/index.ts"
+   }
+}
