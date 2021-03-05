@@ -10,8 +10,9 @@ const ORMConfig: ConnectionOptions = {
     username: process.env.DB_USER ?? 'root',
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE ?? 'GraphTL',
-    synchronize: true,
-    logging: true,
+    synchronize: process.env.NODE_ENV !== 'production',
+    logging: process.env.NODE_ENV !== 'production',
+    timezone: 'Z',
     charset: 'utf8mb4_unicode_ci',
     entities: [
         'src/entity/**/*.ts'

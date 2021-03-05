@@ -31,6 +31,7 @@ import GraphTLORM from './utils/graphtl-orm'
                             id_str: user.id,
                             username: user.username,
                             data: JSON.stringify(user),
+                            created_at: user.created_at
                         }).save()
                     })
 
@@ -38,12 +39,12 @@ import GraphTLORM from './utils/graphtl-orm'
                     id_str: tweet.data.id,
                     user_id_str: user.id,
                     data: JSON.stringify(tweet),
+                    created_at: tweet.data.created_at
                 }).save()
 
             }
         })
     } catch (error) {
         console.error(error)
-        process.exit(1)
     }
 })()
