@@ -16,6 +16,7 @@
       "typeorm-naming-strategies": "^2.0.0"
    },
    "scripts": {
-      "start": "ts-node src/index.ts"
+      "start": "ts-node src/index.ts",
+      "typeorm": "ts-node node_modules/typeorm/cli.js"
    }
 }
