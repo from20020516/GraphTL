@@ -164,7 +164,7 @@ export const fetchTimeLine = async (username: string): Promise<ITweet[]> => {
             console.error(error)
             break
         } finally {
-            console.log(tweets.length)
+            console.log(tweets.length, username)
         }
     } while (3200 >= tweets.length || !tweets.length)
 
@@ -175,36 +175,46 @@ export const fetchTimeLine = async (username: string): Promise<ITweet[]> => {
  * Create Tweet/User record by a specific user on Database.
  * @param username
  */
-const createTimeline = async (username: string) => {
+export const createTimeline = async (username: string) => {
     await GraphTLORM.initialize()
     try {
         const tweets = await fetchTimeLine(username)
-        const user = await V2Client.findUserByUsername({
-            parameter: {
-                username,
-                "tweet.fields": undefined,
-                "user.fields": undefined,
-                expansions: undefined
-            }
-        })
-        await User.findOneOrFail({ username }, { relations: ['tweets'] })
+        const user = await User.findOneOrFail({ username }, { relations: ['tweets'] })
             .catch(async () => {
+                const user = await V2Client.findUserByUsername({
+                    parameter: {
+                        username,
+                        "tweet.fields": undefined,
+                        "user.fields": ['created_at'],
+                        expansions: undefined
+                    }
+                })
                 return await User.create({
                     id_str: user.data.id,
                     username,
                     data: JSON.stringify(user),
+                    created_at: user.data.created_at
                 }).save()
             })
-        await Tweet.save(tweets.map(tweet => {
-            return Tweet.create({
-                id_str: tweet.id_str,
-                user_id_str: user.data.id,
-                data: JSON.stringify(tweet),
-            })
-        }))
+
+        await GraphTLORM
+            .client
+            .createQueryBuilder()
+            .insert()
+            .into(Tweet)
+            .values(tweets.map(tweet => {
+                return Tweet.create({
+                    id_str: tweet.id_str,
+                    user_id_str: user.id_str,
+                    data: JSON.stringify(tweet),
+                    created_at: tweet.created_at
+                })
+            }))
+            /** https://github.com/typeorm/typeorm/commit/706d93fb05978a54243e57754c52d331a6aa063c */
+            .orUpdate({ conflict_target: ['id_str'], overwrite: ['id', 'id_str'] })
+            .execute()
+
     } catch (error) {
         console.error(error)
-    } finally {
-        process.exit(1)
     }
 }
