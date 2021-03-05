@@ -38,6 +38,7 @@ import GraphTLORM from './utils/graphtl-orm'
                 await Tweet.create({
                     id_str: tweet.data.id,
                     user_id_str: user.id,
+                    text: tweet.data.text,
                     data: JSON.stringify(tweet),
                     created_at: tweet.data.created_at
                 }).save()

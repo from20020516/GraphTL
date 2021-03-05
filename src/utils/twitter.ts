@@ -206,6 +206,7 @@ export const createTimeline = async (username: string) => {
                 return Tweet.create({
                     id_str: tweet.id_str,
                     user_id_str: user.id_str,
+                    text: tweet.text,
                     data: JSON.stringify(tweet),
                     created_at: tweet.created_at
                 })

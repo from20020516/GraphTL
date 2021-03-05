@@ -17,6 +17,9 @@ export class Tweet extends BaseEntity {
     @JoinColumn({ name: 'user_id_str', referencedColumnName: 'id_str' })
     user: User
 
+    @Column({ type: 'text', nullable: false })
+    text: string
+
     @Column({ type: 'text', nullable: false, comment: 'DO NOT use json type on MySQL5.7.' })
     data: string
 
