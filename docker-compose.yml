@@ -1,5 +1,12 @@
 version: "3.9"
 services:
+  web:
+    image: node:lts-alpine
+    env_file: .env
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: npm run start
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     tmpfs: /sessions
@@ -10,3 +17,12 @@ services:
       PMA_HOST: ${DB_HOST:-mysql}
       PMA_USER: ${DB_USER:-root}
       PMA_PASSWORD: ${DB_PASSWORD}
+  metabase:
+    image: metabase/metabase
+    environment:
+      MB_DB_TYPE: mysql
+      MB_DB_HOST: ${DB_HOST:-mysql}
+      MB_DB_USER: ${DB_USER:-root}
+      MB_DB_PASS: ${DB_PASSWORD}
+    ports:
+      - 3000:3000
