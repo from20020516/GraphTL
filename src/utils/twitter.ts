@@ -1,8 +1,13 @@
-import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters } from './client-generated'
+import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Params$searchStream, Schemas } from './client-generated'
+import { IncomingMessage } from 'http'
 import axios, { Method, AxiosError } from 'axios'
 import * as dotenv from 'dotenv'
 dotenv.config()
 
+/**
+ * axios based Twitter client with interceptors.
+ * @example (await client.get('/1.1/application/rate_limit_status.json')).data
+ */
 export const client = axios.create({
     headers: {
         Authorization: `Bearer ${process.env.BEARER_TOKEN}`
@@ -20,13 +25,11 @@ client.interceptors.request.use(request => {
     return request
 }, (error: AxiosError) => {
     console.error('ERR_REQUEST:', error.request)
-    process.exit(1)
 })
 client.interceptors.response.use((response) => {
     return response
 }, (error: AxiosError) => {
     console.error('ERR_RESPONSE:', error.response?.status, error.response?.statusText)
-    process.exit(1)
 })
 interface RequestOption {
     retries?: number
@@ -54,17 +57,14 @@ const apiClientImpl: ApiClient<RequestOption> = {
         requestBody: ObjectLike | any,
         queryParameters: QueryParameters | undefined,
         options?: RequestOption,
-    ): Promise<any> => {
-
-        return (await client({
-            baseURL: url,
-            method: convertHttpMethodToAxiosMethod(httpMethod),
-            headers,
-            params: queryParameters,
-            data: requestBody,
-            timeout: options?.timeout,
-        })).data
-    }
+    ): Promise<any> => (await client({
+        baseURL: url,
+        method: convertHttpMethodToAxiosMethod(httpMethod),
+        headers,
+        params: queryParameters,
+        data: requestBody,
+        timeout: options?.timeout,
+    })).data
 }
 
 /**
@@ -74,3 +74,63 @@ const apiClientImpl: ApiClient<RequestOption> = {
  */
 export const V2Client = new Client<RequestOption>(apiClientImpl, 'https://api.twitter.com')
 
+/**
+ * (v2): Streams tweets matching a user's active rule set.
+ * @see https://developer.twitter.com/en/docs/twitter-api/tweets/filtered-stream/introduction
+ * @see https://nodejs.org/api/stream.html
+ * @example (await connectSearchStream(params)).on('data', async chunk => chunk.length > 2 && console.log(JSON.parse(chunk)))
+ */
+export const connectSearchStream = async (params: Params$searchStream): Promise<IncomingMessage> =>
+    (await client.get(`/2/tweets/search/stream`, { responseType: 'stream', params: params.parameter })).data
+
+interface IDeleteRulesRequest extends Schemas.DeleteRulesRequest { delete: { ids: string[] } }
+/**
+ * (v2):  Create rule set by specific user’s timeline.
+ * @param username
+ * @see https://developer.twitter.com/en/docs/twitter-api/tweets/filtered-stream/introduction
+ */
+export const createTimelineRulesByUsername = async (username: string) => {
+    const user = await V2Client.findUserByUsername({
+        parameter: {
+            username,
+            "tweet.fields": undefined,
+            "user.fields": undefined,
+            expansions: undefined,
+        }
+    })
+
+    let rules: string[][] = [];
+    (await V2Client.usersIdFollowers({ parameter: { id: user.data.id, max_results: 1000 } })).data
+        .map(follower => `from:${follower.username}`)
+        .reduce((usernames, username) => {
+            const index = Math.floor((usernames.length + (` OR ${username} `.length)) / 512)
+            rules[index] = [...rules[index] ?? [], username]
+            return `${usernames} OR ${username} `
+        })
+
+    await Promise.all(rules.map(async (rule, tag) => {
+        const add = [{ value: rule.join(' OR '), tag: String(tag) }]
+        console.log(add)
+
+        await V2Client.addOrDeleteRules({
+            parameter: { dry_run: false },
+            requestBody: {
+                add
+            }
+        })
+    }))
+}
+
+/**
+* (v2): Delete all rule set.
+*/
+export const deleteAllRules = async () => {
+    const ids = (await V2Client.getRules({ parameter: {} })).data?.map(rule => rule.id)
+    console.log(ids)
+    ids && await V2Client.addOrDeleteRules({
+        parameter: { dry_run: false },
+        requestBody: {
+            delete: { ids }
+        } as IDeleteRulesRequest,
+    })
+}
