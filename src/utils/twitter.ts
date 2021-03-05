@@ -10,7 +10,7 @@ export const client = axios.create({
     baseURL: 'https://api.twitter.com'
 })
 client.interceptors.request.use(request => {
-    request.params = Object.fromEntries(Object.entries(request.params).map(array => {
+    request.params &&= Object.fromEntries(Object.entries(request.params).map(array => {
         if (typeof array[1] !== 'object') return array
         if (Array.isArray(array[1])) return [array[0], array[1].join()]
         if (Array.isArray(array[1]['value'])) return [array[0], array[1]['value'].join()]
