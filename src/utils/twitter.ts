@@ -1,6 +1,9 @@
 import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Params$searchStream, Schemas } from './client-generated'
 import { IncomingMessage } from 'http'
+import { Tweet } from '../entity/Tweet'
+import { User } from '../entity/User'
 import axios, { Method, AxiosError } from 'axios'
+import GraphTLORM from './graphtl-orm'
 import * as dotenv from 'dotenv'
 dotenv.config()
 
@@ -133,4 +136,75 @@ export const deleteAllRules = async () => {
             delete: { ids }
         } as IDeleteRulesRequest,
     })
+}
+
+interface ITweet extends Schemas.Tweet { id_str: string }
+/**
+ * (v1): Get specific user's timeline.
+ * @param username
+ * @see https://developer.twitter.com/en/docs/twitter-api/v1/tweets/timelines/api-reference/get-statuses-user_timeline
+ */
+export const fetchTimeLine = async (username: string): Promise<ITweet[]> => {
+    let tweets: ITweet[] = []
+    do {
+        try {
+            const response = (await client.get<ITweet[]>('/1.1/statuses/user_timeline.json', {
+                params: {
+                    count: 200,
+                    screen_name: username,
+                    max_id: tweets.slice(-1)[0] ? (BigInt(tweets.slice(-1)[0].id_str) - BigInt(1)) : undefined,
+                    trim_user: true,
+                    exclude_replies: false,
+                    include_rts: true,
+                },
+            })).data
+            if (!response.length) break
+            tweets.push(...response)
+        } catch (error) {
+            console.error(error)
+            break
+        } finally {
+            console.log(tweets.length)
+        }
+    } while (3200 >= tweets.length || !tweets.length)
+
+    return tweets
+}
+
+/**
+ * Create Tweet/User record by a specific user on Database.
+ * @param username
+ */
+const createTimeline = async (username: string) => {
+    await GraphTLORM.initialize()
+    try {
+        const tweets = await fetchTimeLine(username)
+        const user = await V2Client.findUserByUsername({
+            parameter: {
+                username,
+                "tweet.fields": undefined,
+                "user.fields": undefined,
+                expansions: undefined
+            }
+        })
+        await User.findOneOrFail({ username }, { relations: ['tweets'] })
+            .catch(async () => {
+                return await User.create({
+                    id_str: user.data.id,
+                    username,
+                    data: JSON.stringify(user),
+                }).save()
+            })
+        await Tweet.save(tweets.map(tweet => {
+            return Tweet.create({
+                id_str: tweet.id_str,
+                user_id_str: user.data.id,
+                data: JSON.stringify(tweet),
+            })
+        }))
+    } catch (error) {
+        console.error(error)
+    } finally {
+        process.exit(1)
+    }
 }
