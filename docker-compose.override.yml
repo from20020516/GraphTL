@@ -1,0 +1,31 @@
+services:
+  web:
+    restart: unless-stopped
+    command: "npm run start"
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    tmpfs: /sessions
+    ports:
+      - 8080:80
+    env_file: .env
+    environment:
+      PMA_HOST: ${DB_HOST:-mysql}
+      PMA_USER: ${DB_USER:-root}
+      PMA_PASSWORD: ${DB_PASSWORD}
+  metabase:
+    image: metabase/metabase
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    env_file: .env
+    volumes:
+      - metabase:/metabase-data
+    environment:
+      MB_DB_DBNAME: metabase
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_DB_TYPE: mysql
+      MB_DB_HOST: ${DB_HOST:-mysql}
+      MB_DB_USER: ${DB_USER:-root}
+      MB_DB_PASS: ${DB_PASSWORD}
+      MB_DB_PORT: ${DB_PORT:-3306}

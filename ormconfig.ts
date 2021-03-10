@@ -5,7 +5,7 @@ dotenv.config()
 
 const ORMConfig: ConnectionOptions = {
     type: 'mysql',
-    host: process.env.DB_HOST ?? '127.0.0.1',
+    host: process.env.DB_HOST ?? 'mysql',
     port: Number(process.env.DB_PORT) ?? 3306,
     username: process.env.DB_USER ?? 'root',
     password: process.env.DB_PASSWORD,

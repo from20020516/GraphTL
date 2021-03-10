@@ -84,7 +84,7 @@ export const V2Client = new Client<RequestOption>(apiClientImpl, 'https://api.tw
  * @example (await connectSearchStream(params)).on('data', async chunk => chunk.length > 2 && console.log(JSON.parse(chunk)))
  */
 export const connectSearchStream = async (params: Params$searchStream): Promise<IncomingMessage> =>
-    (await client.get(`/2/tweets/search/stream`, { responseType: 'stream', params: params.parameter })).data
+    (await client.get(`/2/tweets/${Number(process.env.SAMPLE_STREAM) ? 'sample' : 'search'}/stream`, { responseType: 'stream', params: params.parameter })).data
 
 interface IDeleteRulesRequest extends Schemas.DeleteRulesRequest { delete: { ids: string[] } }
 /**

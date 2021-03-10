@@ -25,7 +25,7 @@ import GraphTLORM from './utils/graphtl-orm'
 
                 console.log(JSON.stringify(tweet, null, 2))
 
-                await User.findOneOrFail({ id_str: user.id }, { relations: ['tweets'] })
+                await User.findOneOrFail({ id_str: user.id })
                     .catch(async () => {
                         return await User.create({
                             id_str: user.id,
