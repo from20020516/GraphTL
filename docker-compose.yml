@@ -17,6 +17,17 @@ services:
       MYSQL_DATABASE: "GraphTL"
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_ROOT_PASSWORD: null
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    restart: unless-stopped
+    tmpfs: /sessions
+    ports:
+      - 8080:80
+    env_file: .env
+    environment:
+      PMA_HOST: ${DB_HOST:-mysql}
+      PMA_USER: ${DB_USER:-root}
+      PMA_PASSWORD: ${DB_PASSWORD}
 volumes:
   mysql:
   metabase:

@@ -2,17 +2,6 @@ services:
   web:
     restart: unless-stopped
     command: "npm run start"
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    restart: unless-stopped
-    tmpfs: /sessions
-    ports:
-      - 8080:80
-    env_file: .env
-    environment:
-      PMA_HOST: ${DB_HOST:-mysql}
-      PMA_USER: ${DB_USER:-root}
-      PMA_PASSWORD: ${DB_PASSWORD}
   metabase:
     image: metabase/metabase
     restart: unless-stopped
