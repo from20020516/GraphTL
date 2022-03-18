@@ -16,7 +16,7 @@
       "json-bigint": "^1.0.0",
       "mysql": "^2.18.1",
       "reflect-metadata": "^0.1.13",
-      "typeorm": "^0.2.31",
+      "typeorm": "^0.3.0",
       "typeorm-naming-strategies": "^2.0.0"
    },
    "scripts": {
