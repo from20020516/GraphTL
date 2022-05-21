@@ -11,7 +11,7 @@
    },
    "dependencies": {
       "@himenon/openapi-typescript-code-generator": "^0.4.0",
-      "axios": "^0.21.1",
+      "axios": "^0.27.0",
       "dotenv": "^8.2.0",
       "json-bigint": "^1.0.0",
       "mysql": "^2.18.1",
