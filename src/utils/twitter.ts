@@ -2,10 +2,11 @@ import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Params$sear
 import { IncomingMessage } from 'http'
 import { Tweet } from '../entity/Tweet'
 import { User } from '../entity/User'
+import { tokenGenerator, exportAuthToken } from './token-generator'
 import axios, { Method, AxiosError } from 'axios'
 import GraphTLORM from './graphtl-orm'
-import * as dotenv from 'dotenv'
-dotenv.config()
+import { config } from 'dotenv'
+config()
 
 /**
  * axios based Twitter client with interceptors.
@@ -17,14 +18,47 @@ export const client = axios.create({
     },
     baseURL: 'https://api.twitter.com'
 })
-client.interceptors.request.use(request => {
-    request.params &&= Object.fromEntries(Object.entries(request.params).map(array => {
-        if (typeof array[1] !== 'object') return array
-        if (Array.isArray(array[1])) return [array[0], array[1].join()]
-        if (Array.isArray(array[1]['value'])) return [array[0], array[1]['value'].join()]
-        if (array[1]['value']) return [array[0], array[1]['value']]
-        return []
-    }))
+client.interceptors.request.use(async (request) => {
+    if (!process.env.BEARER_TOKEN) {
+        const token = await tokenGenerator([
+            'tweet.read',
+            // 'tweet.write',
+            // 'tweet.moderate.write',
+            'users.read',
+            'follows.read',
+            // 'follows.write',
+            // 'offline.access',
+            'space.read',
+            'mute.read',
+            // 'mute.write',
+            'like.read',
+            // 'like.write',
+            'list.read',
+            // 'list.write',
+            'block.read',
+            // 'block.write',
+            'bookmark.read',
+            // 'bookmark.write'
+        ])
+        if (token.access_token) {
+            exportAuthToken(token)
+            request.headers.Authorization = `Bearer ${token.access_token}`
+            console.log(process.env.BEARER_TOKEN)
+            console.log(request.headers)
+        }
+    }
+    /** @todo generate latest OpenAPI client. */
+    Object.entries(request.params)
+        .forEach(([key, value]) => {
+            if (value === undefined)
+                delete request.params[key]
+            if (Array.isArray(value))
+                request.params[key] = value.join()
+            if (Array.isArray(value['value']))
+                request.params[key] = value['value'].join()
+            if (typeof value === 'object' && !value['value'])
+                delete request.params[key]
+        })
     return request
 }, (error: AxiosError) => {
     console.error('ERR_REQUEST:', error.request)
@@ -67,7 +101,7 @@ const apiClientImpl: ApiClient<RequestOption> = {
         params: queryParameters,
         data: requestBody,
         timeout: options?.timeout,
-    })).data
+    }))?.data
 }
 
 /**
