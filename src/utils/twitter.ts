@@ -1,5 +1,4 @@
-import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Params$searchStream, Schemas } from './client-generated'
-import { IncomingMessage } from 'http'
+import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Schemas } from './client-generated'
 import { Tweet } from '../entity/Tweet'
 import { User } from '../entity/User'
 import { tokenGenerator, exportAuthToken } from './token-generator'
@@ -43,21 +42,18 @@ client.interceptors.request.use(async (request) => {
         if (token.access_token) {
             exportAuthToken(token)
             request.headers.Authorization = `Bearer ${token.access_token}`
-            console.log(process.env.BEARER_TOKEN)
-            console.log(request.headers)
         }
     }
-    Object.entries(request.params)
-        .forEach(([key, value]) => {
-            if (value === undefined)
-                delete request.params[key]
-            if (Array.isArray(value))
-                request.params[key] = value.join()
-            if (Array.isArray(value['value']))
-                request.params[key] = value['value'].join()
-            if (typeof value === 'object' && !value['value'])
-                delete request.params[key]
-        })
+    if (request.baseURL.endsWith('stream'))
+        request.responseType = 'stream'
+
+    request.params &&= Object.fromEntries(Object.entries(request.params).map(([key, value]) => {
+        if (typeof value !== 'object') return [key, value]
+        if (Array.isArray(value)) return [key, value.join()]
+        if (Array.isArray(value['value'])) return [key, value['value'].join()]
+        if (value['value']) return [key, value['value']]
+        return []
+    }))
     return request
 }, (error: AxiosError) => {
     console.error('ERR_REQUEST:', error.request)
@@ -109,15 +105,6 @@ const apiClientImpl: ApiClient<RequestOption> = {
  * @see https://developer.twitter.com/en/docs/twitter-api
  */
 export const V2Client = new Client<RequestOption>(apiClientImpl, 'https://api.twitter.com')
-
-/**
- * (v2): Streams tweets matching a user's active rule set.
- * @see https://developer.twitter.com/en/docs/twitter-api/tweets/filtered-stream/introduction
- * @see https://nodejs.org/api/stream.html
- * @example (await connectSearchStream(params)).on('data', async chunk => chunk.length > 2 && console.log(JSON.parse(chunk)))
- */
-export const connectSearchStream = async (params: Params$searchStream): Promise<IncomingMessage> =>
-    (await client.get(`/2/tweets/${Number(process.env.SAMPLE_STREAM) ? 'sample' : 'search'}/stream`, { responseType: 'stream', params: params.parameter })).data
 
 interface IDeleteRulesRequest extends Schemas.DeleteRulesRequest { delete: { ids: string[] } }
 /**
