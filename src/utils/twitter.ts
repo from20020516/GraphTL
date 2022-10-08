@@ -47,7 +47,6 @@ client.interceptors.request.use(async (request) => {
             console.log(request.headers)
         }
     }
-    /** @todo generate latest OpenAPI client. */
     Object.entries(request.params)
         .forEach(([key, value]) => {
             if (value === undefined)
