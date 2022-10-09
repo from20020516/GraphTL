@@ -28,7 +28,7 @@ const base64URLEncode = (buffer: Buffer) => buffer
     .replace(/=/g, '')
 
 /** set auth tokens to `process.env` and `.env` file. */
-export const exportAuthToken = ({ access_token, refresh_token }: TokenResponse) => {
+const exportAuthToken = ({ access_token, refresh_token }: TokenResponse) => {
     process.env.BEARER_TOKEN = access_token
     process.env.REFRESH_TOKEN = refresh_token
     /** merge new credentials and `.env` */
@@ -105,6 +105,7 @@ export const tokenGenerator = async (scope: scope[]) => new Promise<TokenRespons
             console.log(`\x1b[32mTwitter OAuth2 Authorization Request URL (Open in browser): \x1b[33mhttps://twitter.com/i/oauth2/authorize?${param}`)
         })
     })
+    exportAuthToken(token)
     server.on('close', () => resolve(token))
     sockets.forEach(socket => socket.destroy())
     server.close()

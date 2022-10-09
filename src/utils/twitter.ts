@@ -1,8 +1,8 @@
-import { ApiClient, Client, HttpMethod, ObjectLike, QueryParameters, Schemas } from './client-generated'
+import { Client, HttpMethod, ObjectLike, QueryParameters, Schemas } from './client-generated'
 import { Tweet } from '../entity/Tweet'
 import { User } from '../entity/User'
-import { tokenGenerator, exportAuthToken } from './token-generator'
-import axios, { Method, AxiosError } from 'axios'
+import { tokenGenerator } from './token-generator'
+import axios, { AxiosError } from 'axios'
 import GraphTLORM from './graphtl-orm'
 import { config } from 'dotenv'
 config()
@@ -11,100 +11,84 @@ config()
  * axios based Twitter client with interceptors.
  * @example (await client.get('/1.1/application/rate_limit_status.json')).data
  */
-export const client = axios.create({
-    headers: {
-        Authorization: `Bearer ${process.env.BEARER_TOKEN}`
-    },
-    baseURL: 'https://api.twitter.com'
+export const client = axios.create()
+client.interceptors.request.use(async (request) => request, (error: AxiosError) => {
+    console.error('ERR_REQUEST:', error.request)
+    return Promise.reject(error)
 })
-client.interceptors.request.use(async (request) => {
-    if (!process.env.BEARER_TOKEN) {
-        const token = await tokenGenerator([
-            'tweet.read',
-            // 'tweet.write',
-            // 'tweet.moderate.write',
-            'users.read',
-            'follows.read',
-            // 'follows.write',
-            // 'offline.access',
-            'space.read',
-            'mute.read',
-            // 'mute.write',
-            'like.read',
-            // 'like.write',
-            'list.read',
-            // 'list.write',
-            'block.read',
-            // 'block.write',
-            'bookmark.read',
-            // 'bookmark.write'
-        ])
-        if (token.access_token) {
-            exportAuthToken(token)
-            request.headers.Authorization = `Bearer ${token.access_token}`
+client.interceptors.response.use(({ data }) => data, async (error: AxiosError) => {
+    console.error('ERR_RESPONSE:', error.response?.status, error.response?.statusText)
+    if ('Unauthorized' === error.response.statusText) {
+        if (!process.env.BEARER_TOKEN && process.env.CLIENT_ID && process.env.CLIENT_SECRET) {
+            const token = await tokenGenerator([
+                'tweet.read',
+                // 'tweet.write',
+                // 'tweet.moderate.write',
+                'users.read',
+                'follows.read',
+                // 'follows.write',
+                // 'offline.access',
+                'space.read',
+                'mute.read',
+                // 'mute.write',
+                'like.read',
+                // 'like.write',
+                'list.read',
+                // 'list.write',
+                'block.read',
+                // 'block.write',
+                'bookmark.read',
+                // 'bookmark.write'
+            ])
+            error.config.headers.Authorization = `Bearer ${token.access_token}`
+            return client.request(error.config)
         }
     }
-    if (request.baseURL.endsWith('stream'))
-        request.responseType = 'stream'
-
-    request.params &&= Object.fromEntries(Object.entries(request.params).map(([key, value]) => {
-        if (typeof value !== 'object') return [key, value]
-        if (Array.isArray(value)) return [key, value.join()]
-        if (Array.isArray(value['value'])) return [key, value['value'].join()]
-        if (value['value']) return [key, value['value']]
-        return []
-    }))
-    return request
-}, (error: AxiosError) => {
-    console.error('ERR_REQUEST:', error.request)
+    return Promise.reject(error)
 })
-client.interceptors.response.use((response) => {
-    return response
-}, (error: AxiosError) => {
-    console.error('ERR_RESPONSE:', error.response?.status, error.response?.statusText)
-})
-interface RequestOption {
-    retries?: number
-    timeout?: number
-    deadline?: number
-}
-const convertHttpMethodToAxiosMethod = (httpMethod: HttpMethod): Method => {
-    const patterns: { [key in HttpMethod]: Method } = {
-        GET: 'GET',
-        PUT: 'PUT',
-        POST: 'POST',
-        DELETE: 'DELETE',
-        OPTIONS: 'OPTIONS',
-        HEAD: 'HEAD',
-        PATCH: 'PATCH',
-        TRACE: 'POST', // ?
-    }
-    return patterns[httpMethod]
-}
-const apiClientImpl: ApiClient<RequestOption> = {
-    request: async (
-        httpMethod: HttpMethod,
-        url: string,
-        headers: ObjectLike | any,
-        requestBody: ObjectLike | any,
-        queryParameters: QueryParameters | undefined,
-        options?: RequestOption,
-    ): Promise<any> => (await client({
-        baseURL: url,
-        method: convertHttpMethodToAxiosMethod(httpMethod),
-        headers,
-        params: queryParameters,
-        data: requestBody,
-        timeout: options?.timeout,
-    }))?.data
-}
 
 /**
  * Twitter v2 API Client
  * @requires process.env.BEARER_TOKEN
  * @see https://developer.twitter.com/en/docs/twitter-api
  */
-export const V2Client = new Client<RequestOption>(apiClientImpl, 'https://api.twitter.com')
+export const V2Client = new Client({
+    request: async (
+        httpMethod: HttpMethod,
+        url: string,
+        headers: ObjectLike | any,
+        requestBody: ObjectLike | any,
+        queryParameters: QueryParameters | undefined,
+        options?: {
+            retries?: number
+            timeout?: number
+            deadline?: number
+        }
+    ): Promise<any> => client({
+        method: httpMethod,
+        data: requestBody,
+        headers: {
+            ...headers,
+            Authorization: `Bearer ${process.env.BEARER_TOKEN}`
+        },
+        params: queryParameters,
+        paramsSerializer: (params) => Object.entries(params)
+            .reduce((prev, [key, value]) => {
+                if (typeof value !== 'object')
+                    return [...prev, [key, value].join('=')]
+                if (Array.isArray(value))
+                    return [...prev, [key, value.join(',')].join('=')]
+                if (Array.isArray(value['value']))
+                    return [...prev, [key, value['value'].join(',')].join('=')]
+                if (value['value'])
+                    return [...prev, [key, value['value']].join('=')]
+                return prev
+            }, []).join('&'),
+        responseType: (_ => _.endsWith('stream') ? 'stream' : 'json')(url),
+        timeout: options?.timeout,
+        url,
+    })
+}, 'https://api.twitter.com')
 
 interface IDeleteRulesRequest extends Schemas.DeleteRulesRequest { delete: { ids: string[] } }
 /**
