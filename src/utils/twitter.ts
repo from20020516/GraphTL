@@ -1,50 +1,54 @@
-import { Client, HttpMethod, ObjectLike, QueryParameters, Schemas } from './client-generated'
-import { Tweet } from '../entity/Tweet'
-import { User } from '../entity/User'
-import { tokenGenerator } from './token-generator'
+import { Client, HttpMethod, ObjectLike, QueryParameters } from './client-generated'
+import { createToken, updateToken, Scope } from './token-generator'
 import axios, { AxiosError } from 'axios'
-import GraphTLORM from './graphtl-orm'
 import { config } from 'dotenv'
 config()
+
+const scope: Scope[] = [
+    // 'offline.access',
+    // 'tweet.write',
+    // 'tweet.moderate.write',
+    // 'follows.write',
+    // 'mute.write',
+    // 'like.write',
+    // 'list.write',
+    // 'block.write',
+    // 'bookmark.write',
+    'tweet.read',
+    'users.read',
+    'follows.read',
+    'space.read',
+    'mute.read',
+    'like.read',
+    'list.read',
+    'block.read',
+    'bookmark.read',
+]
 
 /**
  * axios based Twitter client with interceptors.
  * @example (await client.get('/1.1/application/rate_limit_status.json')).data
  */
 export const client = axios.create()
-client.interceptors.request.use(async (request) => request, (error: AxiosError) => {
-    console.error('ERR_REQUEST:', error.request)
-    return Promise.reject(error)
+client.interceptors.request.use(request => {
+    console.log(request.method.toUpperCase(), request.url, request.data)
+    return request
 })
-client.interceptors.response.use(({ data }) => data, async (error: AxiosError) => {
-    console.error('ERR_RESPONSE:', error.response?.status, error.response?.statusText)
-    if ('Unauthorized' === error.response.statusText) {
-        if (!process.env.BEARER_TOKEN && process.env.CLIENT_ID && process.env.CLIENT_SECRET) {
-            const token = await tokenGenerator([
-                'tweet.read',
-                // 'tweet.write',
-                // 'tweet.moderate.write',
-                'users.read',
-                'follows.read',
-                // 'follows.write',
-                // 'offline.access',
-                'space.read',
-                'mute.read',
-                // 'mute.write',
-                'like.read',
-                // 'like.write',
-                'list.read',
-                // 'list.write',
-                'block.read',
-                // 'block.write',
-                'bookmark.read',
-                // 'bookmark.write'
-            ])
-            error.config.headers.Authorization = `Bearer ${token.access_token}`
-            return client.request(error.config)
+client.interceptors.response.use(({ data }) => {
+    return data
+}, async ({ config, response: { statusText, data } }: AxiosError) => {
+    if ('Unauthorized' === statusText) {
+        const { CLIENT_ID, CLIENT_SECRET, BEARER_TOKEN, REFRESH_TOKEN } = process.env
+        if (BEARER_TOKEN && REFRESH_TOKEN) {
+            await updateToken(CLIENT_ID, REFRESH_TOKEN)
+            return client.request(config)
+        } else if (CLIENT_ID && CLIENT_SECRET) {
+            const token = await createToken(CLIENT_ID, CLIENT_SECRET, scope)
+            config.headers.Authorization = `Bearer ${token.access_token}`
+            return client.request(config)
         }
     }
-    return Promise.reject(error)
+    return Promise.reject(JSON.stringify(data, null, 2))
 })
 
 /**
@@ -69,7 +73,8 @@ export const V2Client = new Client({
         data: requestBody,
         headers: {
             ...headers,
-            Authorization: `Bearer ${process.env.BEARER_TOKEN}`
+            /** @see https://developer.twitter.com/ja/docs/authentication/oauth-2-0/application-only */
+            Authorization: (_ => `Bearer ${_.includes('/stream') ? process.env.APP_BEARER_TOKEN : process.env.BEARER_TOKEN}`)(url)
         },
         params: queryParameters,
         paramsSerializer: (params) => Object.entries(params)
@@ -84,41 +89,37 @@ export const V2Client = new Client({
                     return [...prev, [key, value['value']].join('=')]
                 return prev
             }, []).join('&'),
-        responseType: (_ => _.endsWith('stream') ? 'stream' : 'json')(url),
+        responseType: (_ => _.endsWith('/stream') ? 'stream' : 'json')(url),
         timeout: options?.timeout,
         url,
     })
 }, 'https://api.twitter.com')
 
-interface IDeleteRulesRequest extends Schemas.DeleteRulesRequest { delete: { ids: string[] } }
-/**
- * (v2):  Create rule set by specific user’s timeline.
- * @param username
- * @see https://developer.twitter.com/en/docs/twitter-api/tweets/filtered-stream/introduction
- */
-export const createTimelineRulesByUsername = async (username: string) => {
-    const user = await V2Client.findUserByUsername({
-        parameter: {
-            username,
-            "tweet.fields": undefined,
-            "user.fields": undefined,
-            expansions: undefined,
-        }
-    })
-
-    let rules: string[][] = [];
-    (await V2Client.usersIdFollowers({ parameter: { id: user.data.id, max_results: 1000 } })).data
-        .map(follower => `from:${follower.username}`)
-        .reduce((usernames, username) => {
-            const index = Math.floor((usernames.length + (` OR ${username} `.length)) / 512)
-            rules[index] = [...rules[index] ?? [], username]
-            return `${usernames} OR ${username} `
+export const deleteAllStreamRules = async () => {
+    const { data } = await V2Client.getRules({ parameter: {} })
+    if (data) {
+        await V2Client.addOrDeleteRules({
+            parameter: { dry_run: false },
+            requestBody: {
+                delete: { ids: data.map(rule => rule.id) }
+            }
         })
+        console.log(`${data.length} rules deleted.`)
+    }
+}
 
-    await Promise.all(rules.map(async (rule, tag) => {
-        const add = [{ value: rule.join(' OR '), tag: String(tag) }]
-        console.log(add)
-
+export const createMyTimelineStreamRules = async () => {
+    const { data: { id, username } } = await V2Client.findMyUser({ parameter: {} })
+    const { data } = await V2Client.usersIdFollowers({ parameter: { id, max_results: 1000 } })
+    const { rules } = data
+        .map(follower => `from:${follower.username}`)
+        .reduce((prev, username) => {
+            const index = Math.floor((prev.usernames.length + (` OR ${username} `.length)) / 512)
+            prev.rules[index] = [...prev.rules[index] ?? [], username]
+            return { rules: prev.rules, usernames: `${prev.usernames} OR ${username}` }
+        }, { rules: [], usernames: '' })
+    await Promise.all(rules.map(async (rule, index) => {
+        const add = [{ value: rule.join(' OR '), tag: `${username}_${index + 1}` }]
         await V2Client.addOrDeleteRules({
             parameter: { dry_run: false },
             requestBody: {
@@ -126,100 +127,5 @@ export const createTimelineRulesByUsername = async (username: string) => {
             }
         })
     }))
-}
-
-/**
-* (v2): Delete all rule set.
-*/
-export const deleteAllRules = async () => {
-    const ids = (await V2Client.getRules({ parameter: {} })).data?.map(rule => rule.id)
-    console.log(ids)
-    ids && await V2Client.addOrDeleteRules({
-        parameter: { dry_run: false },
-        requestBody: {
-            delete: { ids }
-        } as IDeleteRulesRequest,
-    })
-}
-
-interface ITweet extends Schemas.Tweet { id_str: string }
-/**
- * (v1): Get specific user's timeline.
- * @param username
- * @see https://developer.twitter.com/en/docs/twitter-api/v1/tweets/timelines/api-reference/get-statuses-user_timeline
- */
-export const fetchTimeLine = async (username: string): Promise<ITweet[]> => {
-    let tweets: ITweet[] = []
-    do {
-        try {
-            const response = (await client.get<ITweet[]>('/1.1/statuses/user_timeline.json', {
-                params: {
-                    count: 200,
-                    screen_name: username,
-                    max_id: tweets.slice(-1)[0] ? (BigInt(tweets.slice(-1)[0].id_str) - BigInt(1)) : undefined,
-                    trim_user: true,
-                    exclude_replies: false,
-                    include_rts: true,
-                },
-            })).data
-            if (!response.length) break
-            tweets.push(...response)
-        } catch (error) {
-            console.error(error)
-            break
-        } finally {
-            console.log(tweets.length, username)
-        }
-    } while (3200 >= tweets.length || !tweets.length)
-
-    return tweets
-}
-
-/**
- * Create Tweet/User record by a specific user on Database.
- * @param username
- */
-export const createTimeline = async (username: string) => {
-    await GraphTLORM.initialize()
-    try {
-        const tweets = await fetchTimeLine(username)
-        const user = await User.findOneOrFail({ username }, { relations: ['tweets'] })
-            .catch(async () => {
-                const user = await V2Client.findUserByUsername({
-                    parameter: {
-                        username,
-                        "tweet.fields": undefined,
-                        "user.fields": ['created_at'],
-                        expansions: undefined
-                    }
-                })
-                return await User.create({
-                    id_str: user.data.id,
-                    username,
-                    data: JSON.stringify(user),
-                    created_at: user.data.created_at
-                }).save()
-            })
-
-        await GraphTLORM
-            .client
-            .createQueryBuilder()
-            .insert()
-            .into(Tweet)
-            .values(tweets.map(tweet => {
-                return Tweet.create({
-                    id_str: tweet.id_str,
-                    user_id_str: user.id_str,
-                    text: tweet.text,
-                    data: JSON.stringify(tweet),
-                    created_at: tweet.created_at
-                })
-            }))
-            /** https://github.com/typeorm/typeorm/commit/706d93fb05978a54243e57754c52d331a6aa063c */
-            .orUpdate({ conflict_target: ['id_str'], overwrite: ['id', 'id_str'] })
-            .execute()
-
-    } catch (error) {
-        console.error(error)
-    }
+    console.log(`${rules.length}/25 rules created.`)
 }

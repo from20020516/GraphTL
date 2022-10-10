@@ -34,8 +34,7 @@ const exportAuthToken = ({ access_token, refresh_token }: TokenResponse) => {
     /** merge new credentials and `.env` */
     const newEnv = Object.entries({
         ...Object.fromEntries(new Map(readFileSync('.env', { encoding: 'utf-8' }).split('\n').filter(Boolean).map(line => line.split('=', 2) as [string, string]))),
-        BEARER_TOKEN: access_token,
-        REFRESH_TOKEN: refresh_token
+        ...Object.fromEntries(Object.entries({ BEARER_TOKEN: access_token, REFRESH_TOKEN: refresh_token }).filter(([key, value]) => key && value))
     }).map(([key, value]) => `${key}=${value}`).join('\n')
     writeFileSync('.env', newEnv)
 }
@@ -44,7 +43,7 @@ let state: string
 let code_verifier: string
 
 /** @see https://developer.twitter.com/en/docs/authentication/oauth-2-0/authorization-code */
-type scope =
+export type Scope =
     'tweet.read' |
     'tweet.write' |
     'tweet.moderate.write' |
@@ -64,7 +63,7 @@ type scope =
     'bookmark.read' |
     'bookmark.write'
 
-export const tokenGenerator = async (scope: scope[]) => new Promise<TokenResponse>(async (resolve) => {
+export const createToken = async (client_id: string, client_secret: string, scope: Scope[]) => new Promise<TokenResponse>(async (resolve) => {
     const sockets: Socket[] = []
     const { server, token } = await new Promise<{ server: Server, token?: TokenResponse }>(resolve => {
         /** listen OAuth callback */
@@ -75,11 +74,11 @@ export const tokenGenerator = async (scope: scope[]) => new Promise<TokenRespons
                 const { data } = await axios.post<TokenResponse>('https://api.twitter.com/2/oauth2/token', new URLSearchParams({
                     code: params.get('code'),
                     grant_type: 'authorization_code',
-                    client_id: process.env.CLIENT_ID,
+                    client_id: client_id,
                     redirect_uri: 'http://localhost',
                     code_verifier
                 }).toString(), {
-                    auth: { username: process.env.CLIENT_ID, password: process.env.CLIENT_SECRET },
+                    auth: { username: client_id, password: client_secret },
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
                 })
                 res.writeHead(302, { Location: 'https://twitter.com' }).end(() => resolve({ server, token: data }))
@@ -94,7 +93,7 @@ export const tokenGenerator = async (scope: scope[]) => new Promise<TokenRespons
             code_verifier = base64URLEncode(randomBytes(32))
             const param = new URLSearchParams({
                 response_type: 'code',
-                client_id: process.env.CLIENT_ID,
+                client_id: client_id,
                 redirect_uri: 'http://localhost',
                 /** @see https://developer.twitter.com/en/docs/authentication/oauth-2-0/authorization-code */
                 scope: scope.join(' '), /** `refresh_token` requires `offline.access` scope. */
@@ -110,3 +109,15 @@ export const tokenGenerator = async (scope: scope[]) => new Promise<TokenRespons
     sockets.forEach(socket => socket.destroy())
     server.close()
 })
+
+export const updateToken = async (client_id: string, refresh_token: string) => {
+    const { data } = await axios.post<TokenResponse>('https://api.twitter.com/2/oauth2/token', new URLSearchParams({
+        client_id,
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token,
+    }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    })
+    exportAuthToken(data)
+    return data
+}

@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import axios from 'axios'
+import { V2Client } from './twitter'
 import { CodeGenerator } from '@himenon/openapi-typescript-code-generator'
 import * as Templates from "@himenon/openapi-typescript-code-generator/templates"
 import type * as Types from "@himenon/openapi-typescript-code-generator/types"
@@ -9,7 +9,7 @@ import type * as Types from "@himenon/openapi-typescript-code-generator/types"
  * @param entryPoint path of schema `*.json | *.yaml` file.
  */
 (async () => {
-    const { data } = await axios.get('https://api.twitter.com/2/openapi.json')
+    const data = await V2Client.getOpenApiSpec()
     fs.writeFileSync('./openapi.json', JSON.stringify(data, null, 2))
 
     const codeGenerator = new CodeGenerator('./openapi.json')
